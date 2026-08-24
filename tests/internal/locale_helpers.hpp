@@ -26,6 +26,7 @@
 #include <helpers/assertions.hpp>
 #include <clocale>
 #include <cstring>
+#include <locale>
 
 namespace test_helpers
 {
@@ -56,6 +57,42 @@ struct SetLocale
     ~SetLocale() {std::setlocale(LC_ALL, previous_locale);}
 
     char * previous_locale = nullptr;
+};
+
+// Unlike SetLocale (which only changes the C locale seen by e.g. setlocale/localeconv),
+// this changes the *global C++ locale* (std::locale::global), which is what a default-constructed
+// std::ostringstream is imbued with. This is required to reproduce bugs caused by code (such as
+// libstudxml's default_value_traits<T>::serialize) that formats numbers through such a stream.
+struct SetGlobalLocale
+{
+    SetGlobalLocale(const char *locale_name, char expected_thousands_separator)
+        : previous_locale(std::locale::global(std::locale(locale_name)))
+    {
+        const auto &grouping = std::use_facet<std::numpunct<char>>(std::locale()).grouping();
+        const auto actual_thousands_separator = std::use_facet<std::numpunct<char>>(std::locale()).thousands_sep();
+
+        if (grouping.empty() || actual_thousands_separator != expected_thousands_separator)
+        {
+            std::locale::global(previous_locale);
+
+            std::string error = "Unexpected digit grouping for locale ";
+            error += locale_name;
+            error += ": expected thousands separator '";
+            error += expected_thousands_separator;
+            error += "' with digit grouping enabled, but found '";
+            error += actual_thousands_separator;
+            error += "' with grouping ";
+            error += grouping.empty() ? "disabled" : "enabled";
+
+            // If failed, please install the locale specified by the CMake variable XLNT_LOCALE_****_DECIMAL_SEPARATOR
+            // to correctly run this test *and* make sure that the locale groups digits using the expected
+            // thousands separator, or alternatively disable the CMake option XLNT_USE_LOCALE_****_DECIMAL_SEPARATOR.
+            throw xlnt::invalid_parameter(error);
+        }
+    }
+    ~SetGlobalLocale() { std::locale::global(previous_locale); }
+
+    std::locale previous_locale;
 };
 
 } // namespace test_helpers

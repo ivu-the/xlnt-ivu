@@ -78,7 +78,9 @@ public:
         register_test(test_round_trip_rw_encrypted_numbers);
         register_test(test_streaming_read);
         register_test(test_streaming_write);
+#ifdef XLNT_USE_LOCALE_COMMA_DECIMAL_SEPARATOR
         register_test(test_load_save_german_locale);
+#endif
         register_test(test_Issue445_inline_str_load);
         register_test(test_Issue445_inline_str_streaming_read);
         register_test(test_Issue492_stream_empty_row);
@@ -791,9 +793,39 @@ public:
 
     void test_load_save_german_locale()
     {
-        /* std::locale current(std::locale::global(std::locale("de-DE")));
-        test_round_trip_rw_custom_heights_widths();
-        std::locale::global(current);*/
+        // Regression test for a bug where write_characters serialised the shared string index of
+        // a <c t="s"><v> element (an integer) through libstudxml's default_value_traits<T>::serialize,
+        // which formats through a std::ostringstream imbued with the *global* C++ locale. Under a
+        // German locale, digits are grouped with '.' as the thousands separator, so e.g. shared
+        // string index 1521 was written as "1.521" instead of "1521", corrupting the workbook.
+        // The corruption only appears once a shared string index reaches four digits, so the sheet
+        // below is populated with 1200 distinct string cells to make sure the bug would trigger.
+        test_helpers::SetGlobalLocale set_global_locale(XLNT_LOCALE_COMMA_DECIMAL_SEPARATOR, '.');
+
+        xlnt::workbook wb;
+        auto ws = wb.active_sheet();
+
+        const xlnt::row_t num_strings = 1200;
+        std::vector<std::string> values;
+        values.reserve(num_strings);
+
+        for (xlnt::row_t row = 1; row <= num_strings; ++row)
+        {
+            values.push_back("value_" + std::to_string(row));
+            ws.cell(1, row).value(values.back());
+        }
+
+        std::vector<std::uint8_t> data;
+        wb.save(data);
+
+        xlnt::workbook wb_reloaded;
+        wb_reloaded.load(data);
+        auto ws_reloaded = wb_reloaded.active_sheet();
+
+        for (xlnt::row_t row = 1; row <= num_strings; ++row)
+        {
+            xlnt_assert_equals(ws_reloaded.cell(1, row).value<std::string>(), values[row - 1]);
+        }
     }
 
     void test_Issue445_inline_str_load()

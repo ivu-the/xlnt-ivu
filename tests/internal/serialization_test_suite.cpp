@@ -808,7 +808,7 @@ public:
         // 1199 was written as "1.199" instead of "1199", corrupting the workbook.
         // The corruption only appears once a shared string index reaches four digits, so the sheet
         // below is populated with 1200 distinct string cells to make sure the bug would trigger.
-        test_helpers::SetLocale set_locale(XLNT_LOCALE_POINT_THOUSAND_SEPARATOR, ",", ".");
+        test_helpers::SetLocale set_locale(XLNT_LOCALE_POINT_THOUSAND_SEPARATOR, nullptr, ".");
 
         xlnt::workbook wb;
         auto ws = wb.active_sheet();
